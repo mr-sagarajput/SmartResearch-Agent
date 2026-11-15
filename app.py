@@ -10,9 +10,15 @@ from __future__ import annotations
 
 import streamlit as st
 
+import os
+from PIL import Image
+
+_icon_path = os.path.join(os.path.dirname(__file__), "app_icon.png")
+_page_icon = Image.open(_icon_path) if os.path.exists(_icon_path) else "🧠"
+
 st.set_page_config(
     page_title="SmartResearch Chatbot AI",
-    page_icon="🧠",
+    page_icon=_page_icon,
     layout="wide",
     initial_sidebar_state="expanded",
 )
