@@ -10,13 +10,15 @@ Executes 1-to-1 targeted search queries corresponding to the 5 Core Research Pil
 Includes defensive error-handling to prevent NoneType attribute errors.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 import time
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote, urlparse, urlsplit, urlunsplit
 import urllib.robotparser
-from typing import Dict, List, Optional, Tuple, Any
 
-import requests
 from bs4 import BeautifulSoup
+import requests
 
 try:
     from ddgs import DDGS
@@ -32,6 +34,7 @@ from config import (
     USER_AGENT,
 )
 from core.llm_gateway import execute_prompt
+from core.models import ResearchPillar, SearchResult
 
 
 def encode_url(url: str) -> str:
@@ -131,90 +134,153 @@ def fetch_article_text(url: str) -> Optional[str]:
         return None
 
 
-def get_5_pillar_search_queries(topic: str) -> List[Dict[str, str]]:
+def get_5_pillar_search_queries(topic: str) -> List[ResearchPillar]:
     clean_topic = topic.strip()
     return [
-        {
-            "pillar": "1. Introduction & Foundational Concepts",
-            "query": f"{clean_topic} definition introduction foundational concepts overview",
-        },
-        {
-            "pillar": "2. Core Sub-Fields & Taxonomy (Branches)",
-            "query": f"{clean_topic} major branches subfields taxonomy types classification",
-        },
-        {
-            "pillar": "3. Fundamental Principles & Methodologies",
-            "query": f"{clean_topic} fundamental principles core theories methodologies framework",
-        },
-        {
-            "pillar": "4. Real-World Applications & Significance",
-            "query": f"{clean_topic} real world applications practical use cases modern impact",
-        },
-        {
-            "pillar": "5. Critical Limitations & Future Outlook",
-            "query": f"{clean_topic} critical limitations challenges current debates future trends",
-        },
+        ResearchPillar(
+            pillar="1. Introduction & Foundational Concepts",
+            query=f"{clean_topic} definition introduction foundational concepts overview",
+        ),
+        ResearchPillar(
+            pillar="2. Core Sub-Fields & Taxonomy (Branches)",
+            query=f"{clean_topic} major branches subfields taxonomy types classification",
+        ),
+        ResearchPillar(
+            pillar="3. Fundamental Principles & Methodologies",
+            query=f"{clean_topic} fundamental principles core theories methodologies framework",
+        ),
+        ResearchPillar(
+            pillar="4. Real-World Applications & Significance",
+            query=f"{clean_topic} real world applications practical use cases modern impact",
+        ),
+        ResearchPillar(
+            pillar="5. Critical Limitations & Future Outlook",
+            query=f"{clean_topic} critical limitations challenges current debates future trends",
+        ),
     ]
 
 
-def perform_5_pillar_research(topic: str, status_callback=None) -> List[Dict[str, Any]]:
-    pillar_queries = get_5_pillar_search_queries(topic)
-    research_results = []
-    discovered_urls = set()
+def _research_single_pillar(
+    item: Dict[str, str],
+    idx: int,
+    topic: str,
+    discovered_urls: set,
+    url_lock: threading.Lock,
+    status_callback=None,
+) -> Optional[Dict[str, Any]]:
+    """Researches a single academic pillar in an isolated thread worker."""
+    pillar_name = item["pillar"]
+    search_phrase = item["query"]
 
-    for idx, item in enumerate(pillar_queries, 1):
-        pillar_name = item["pillar"]
-        search_phrase = item["query"]
+    # Polite stagger to prevent burst rate limits on search providers
+    if idx > 1:
+        time.sleep((idx - 1) * 0.25)
+
+    if status_callback:
+        try:
+            status_callback(f"🔍 Pillar {idx}/5: Searching for {pillar_name.split('&')[0].strip()}...")
+        except Exception:
+            pass
+
+    hits = search_web(search_phrase, max_results=3)
+    best_article = None
+
+    for hit in hits:
+        url = hit.get("url", "")
+        with url_lock:
+            if not url or url in discovered_urls:
+                continue
+            discovered_urls.add(url)
 
         if status_callback:
-            status_callback(f"🔍 Pillar {idx}/5: Searching for {pillar_name.split('&')[0].strip()}...")
-
-        hits = search_web(search_phrase, max_results=3)
-        best_article = None
-
-        for hit in hits:
-            if hit["url"] not in discovered_urls:
-                discovered_urls.add(hit["url"])
-                if status_callback:
-                    status_callback(f"📖 Reading Source for Pillar {idx}: {hit['title'][:45]}...")
-                raw_text = fetch_article_text(hit["url"])
-                if raw_text and len(raw_text) > 150:
-                    best_article = {
-                        "pillar": pillar_name,
-                        "title": hit["title"],
-                        "url": hit["url"],
-                        "text": raw_text,
-                    }
-                    break
-
-        if best_article:
-            prompt = (
-                f"Pillar: {best_article['pillar']}\n"
-                f"Topic: {topic}\n"
-                f"Source: {best_article['title']} ({best_article['url']})\n\n"
-                f"Article Text:\n{best_article['text']}\n\n"
-                f"Extract 3 to 4 concise, high-value factual points that directly explain this specific pillar:"
-            )
             try:
-                raw_notes, _ = execute_prompt(prompt, max_tokens=300)
+                status_callback(f"📖 Reading Source for Pillar {idx}: {hit.get('title', '')[:45]}...")
+            except Exception:
+                pass
+
+        raw_text = fetch_article_text(url)
+        if raw_text and len(raw_text) > 150:
+            best_article = {
+                "pillar": pillar_name,
+                "title": hit.get("title", "No Title"),
+                "url": url,
+                "text": raw_text,
+            }
+            break
+
+    if best_article:
+        prompt = (
+            f"Pillar: {best_article['pillar']}\n"
+            f"Topic: {topic}\n"
+            f"Source: {best_article['title']} ({best_article['url']})\n\n"
+            f"Article Text:\n{best_article['text']}\n\n"
+            f"Extract 3 to 4 concise, high-value factual points that directly explain this specific pillar:"
+        )
+        try:
+            raw_notes, _ = execute_prompt(prompt, max_tokens=300)
+        except Exception as e:
+            print(f"[LLM Extraction Note]: {e}")
+            raw_notes = ""
+
+        # Defensive Null-Safety: (raw_notes or "").strip()
+        safe_notes = (raw_notes or "").strip()
+        if not safe_notes:
+            safe_notes = best_article["text"][:300].strip()
+
+        return ResearchPillar(
+            pillar=best_article["pillar"],
+            query=search_phrase,
+            title=best_article["title"],
+            url=best_article["url"],
+            notes=safe_notes,
+            full_snippet=best_article["text"][:1200],
+        )
+
+    return None
+
+
+def perform_5_pillar_research(topic: str, status_callback=None) -> List[ResearchPillar]:
+    """
+    Executes 5-Pillar Academic Research concurrently using ThreadPoolExecutor.
+    Maintains polite pacing, error isolation, and canonical pillar ordering.
+    """
+    pillar_queries = get_5_pillar_search_queries(topic)
+    discovered_urls = set()
+    url_lock = threading.Lock()
+
+    max_workers = min(5, len(pillar_queries))
+    collected: List[Tuple[int, Dict[str, Any]]] = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {
+            executor.submit(
+                _research_single_pillar,
+                item,
+                idx,
+                topic,
+                discovered_urls,
+                url_lock,
+                status_callback,
+            ): idx
+            for idx, item in enumerate(pillar_queries, 1)
+        }
+
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                result = future.result()
+                if result:
+                    collected.append((idx, result))
             except Exception as e:
-                print(f"[LLM Extraction Note]: {e}")
-                raw_notes = ""
+                print(f"[Pillar {idx} Research Error]: {e}")
 
-            # Defensive Null-Safety: (raw_notes or "").strip()
-            safe_notes = (raw_notes or "").strip()
-            if not safe_notes:
-                safe_notes = best_article["text"][:300].strip()
-
-            best_article["notes"] = safe_notes
-            best_article["full_snippet"] = best_article["text"][:1200]
-            research_results.append(best_article)
-
-    return research_results
+    # Maintain canonical 1..5 pillar ordering
+    collected.sort(key=lambda x: x[0])
+    return [item for _, item in collected]
 
 
-def perform_live_research(topic: str, max_pages: int = PAGE_LIMIT, status_callback=None) -> List[Dict[str, str]]:
-    """Legacy wrapper for Mode 1 quick Q&A web searches."""
+def perform_live_research(topic: str, max_pages: int = PAGE_LIMIT, status_callback=None) -> List[SearchResult]:
+    """Legacy wrapper for Mode 1 quick Q&A web searches with concurrent page processing."""
     queries = [
         f"{topic} overview definition",
         f"{topic} key facts explanation",
@@ -233,28 +299,47 @@ def perform_live_research(topic: str, max_pages: int = PAGE_LIMIT, status_callba
         if len(sources_to_read) >= max_pages:
             break
 
-    results = []
-    for s in sources_to_read:
-        raw_text = fetch_article_text(s["url"])
-        if raw_text and len(raw_text) > 100:
-            prompt = (
-                f"Source: {s['title']} ({s['url']})\n\n"
-                f"Text:\n{raw_text}\n\n"
-                f"Extract 3 to 5 concise factual bullet points:"
-            )
+    if not sources_to_read:
+        return []
+
+    def _fetch_and_summarize(s: Dict[str, str], idx: int) -> Optional[Tuple[int, SearchResult]]:
+        try:
+            raw_text = fetch_article_text(s["url"])
+            if raw_text and len(raw_text) > 100:
+                prompt = (
+                    f"Source: {s['title']} ({s['url']})\n\n"
+                    f"Text:\n{raw_text}\n\n"
+                    f"Extract 3 to 5 concise factual bullet points:"
+                )
+                try:
+                    raw_notes, _ = execute_prompt(prompt, max_tokens=250)
+                except Exception:
+                    raw_notes = ""
+
+                safe_notes = (raw_notes or "").strip()
+                if not safe_notes:
+                    safe_notes = raw_text[:250].strip()
+
+                return idx, SearchResult(
+                    title=s["title"],
+                    url=s["url"],
+                    notes=safe_notes,
+                    full_snippet=raw_text[:1200],
+                )
+        except Exception as e:
+            print(f"[Live Research Fetch Error]: {e}")
+        return None
+
+    results_indexed: List[Tuple[int, SearchResult]] = []
+    with ThreadPoolExecutor(max_workers=min(max_pages, len(sources_to_read))) as executor:
+        futures = [executor.submit(_fetch_and_summarize, s, idx) for idx, s in enumerate(sources_to_read)]
+        for future in as_completed(futures):
             try:
-                raw_notes, _ = execute_prompt(prompt, max_tokens=250)
-            except Exception:
-                raw_notes = ""
+                res = future.result()
+                if res:
+                    results_indexed.append(res)
+            except Exception as e:
+                print(f"[Live Fetch Thread Error]: {e}")
 
-            safe_notes = (raw_notes or "").strip()
-            if not safe_notes:
-                safe_notes = raw_text[:250].strip()
-
-            results.append({
-                "title": s["title"],
-                "url": s["url"],
-                "notes": safe_notes,
-                "full_snippet": raw_text[:1200],
-            })
-    return results
+    results_indexed.sort(key=lambda x: x[0])
+    return [item for _, item in results_indexed]

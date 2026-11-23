@@ -1,7 +1,23 @@
+# Secrets & Credentials
 .env
+.env.local
+
+# Local Agent Handover Dossier (Confidential / Local-Only)
+PROJECT_HANDOVER.md
+
+# Application Caching & Generated Outputs
 .cache/
+output/
+
+# Python Bytecode & Packaging Artifacts
 __pycache__/
 *.py[cod]
-output/
+*.egg-info/
+build/
+dist/
+.ruff_cache/
+
+# Virtual Environments
 .venv/
 venv/
+ENV/

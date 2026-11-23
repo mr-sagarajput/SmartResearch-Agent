@@ -6,9 +6,9 @@ into standard ReportLab-compatible characters.
 """
 
 from datetime import datetime
+import html
 from pathlib import Path
 from typing import Any, Dict, List
-import html
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -33,7 +33,7 @@ def sanitize_text_for_pdf(text: str) -> str:
     if not text:
         return ""
 
-    # Replace various Unicode hyphens and dashes with standard ASCII hyphen
+    # Replace various Unicode hyphens, dashes, quotes, and math symbols
     replacements = {
         "\u2010": "-",  # Hyphen
         "\u2011": "-",  # Non-breaking hyphen
@@ -56,6 +56,14 @@ def sanitize_text_for_pdf(text: str) -> str:
         "\u2003": " ",  # Em space
         "\u2009": " ",  # Thin space
         "\u2022": "•",  # Standard bullet
+        "\u00b1": "+/-", # Plus-minus sign
+        "\u00d7": "*",   # Multiplication sign
+        "\u00f7": "/",   # Division sign
+        "\u2260": "!=",  # Not equal to
+        "\u2264": "<=",  # Less-than or equal to
+        "\u2265": ">=",  # Greater-than or equal to
+        "\u2248": "~",   # Almost equal to
+        "\u221e": "inf", # Infinity
     }
 
     for char, safe_replacement in replacements.items():
@@ -71,8 +79,8 @@ def sanitize_text_for_pdf(text: str) -> str:
             safe_chars.append(" ")
 
     cleaned = "".join(safe_chars)
-    # Escape HTML special chars so ReportLab Platypus doesn't choke on '<' or '&'
-    return html.escape(cleaned).replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
+    # Escape HTML special chars so ReportLab Platypus doesn't choke on '<' or '&' (keep quotes unescaped for clean PDF text)
+    return html.escape(cleaned, quote=False).replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>")
 
 
 def get_unique_filename(base_name: str, ext: str = ".pdf") -> Path:

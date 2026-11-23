@@ -12,40 +12,30 @@ Features:
 
 from __future__ import annotations
 
-import base64
+from dataclasses import asdict
 import hashlib
 import io
+from pathlib import Path
 import pickle
 import re
 import time
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-import numpy as np
-import pypdfium2 as pdfium
 from google import genai
 from google.genai import errors as genai_errors, types as genai_types
+import numpy as np
 from pypdf import PdfReader
+import pypdfium2 as pdfium
 
 from config import (
     CACHE_DIR,
-    CHUNK_SIZE,
     CHUNK_OVERLAP,
+    CHUNK_SIZE,
     EMBED_MODEL,
     TOP_K,
     VISION_MODEL,
 )
-from core.llm_gateway import get_gemini_client
-
-
-@dataclass
-class DocumentChunk:
-    chunk_id: int
-    source: str       # e.g., "Page 2" or "Web: TechCrunch"
-    page: int         # Page number (or 0 for web)
-    text: str
-    url: str = ""     # URL if originating from web
+from core.models import DocumentChunk
 
 
 def compute_bytes_hash(file_bytes: bytes) -> str:
@@ -182,10 +172,18 @@ def split_text_smart(
                     if current_chunk:
                         chunks.append(current_chunk)
                         overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else current_chunk
-                        current_chunk = f"{overlap_text} {sent}".strip()
+                        if len(overlap_text) + len(sent) + 1 <= max_chars:
+                            current_chunk = f"{overlap_text} {sent}".strip()
+                        else:
+                            while len(sent) > max_chars:
+                                chunks.append(sent[:max_chars])
+                                sent = sent[max_chars - overlap:]
+                            current_chunk = sent
                     else:
-                        chunks.append(sent[:max_chars])
-                        current_chunk = sent[max_chars - overlap:]
+                        while len(sent) > max_chars:
+                            chunks.append(sent[:max_chars])
+                            sent = sent[max_chars - overlap:]
+                        current_chunk = sent
         else:
             if len(current_chunk) + len(para) + 2 <= max_chars:
                 current_chunk = f"{current_chunk}\n\n{para}".strip()
@@ -304,7 +302,7 @@ def embed_chunks(
         # Apply safe pacing between batches for large multi-batch files
         if batch_idx < total_batches:
             if progress_callback:
-                progress_callback(f"⏳ Pacing between batches to protect Free Tier quota (Waiting 15s)...")
+                progress_callback("⏳ Pacing between batches to protect Free Tier quota (Waiting 15s)...")
             time.sleep(15.0)
 
     return np.array(all_embeddings, dtype=np.float32)

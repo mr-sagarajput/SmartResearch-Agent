@@ -8,10 +8,10 @@ Dual-Tab Architecture with In-Line Chat:
 
 from __future__ import annotations
 
-import streamlit as st
-
 import os
+
 from PIL import Image
+import streamlit as st
 
 _icon_path = os.path.join(os.path.dirname(__file__), "app_icon.png")
 _page_icon = Image.open(_icon_path) if os.path.exists(_icon_path) else "🧠"
@@ -27,8 +27,8 @@ from config import (
     GEMINI_API_KEY,
     OPENROUTER_API_KEY,
 )
-from core.agent_router import execute_deep_research, process_query_with_router
 from core.llm_gateway import get_gemini_client, get_openrouter_client
+from core.router import execute_deep_research, process_query_with_router
 from core.vector_engine import (
     build_document_chunks,
     compute_bytes_hash,

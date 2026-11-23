@@ -5,19 +5,19 @@ between OpenRouter Free Models and Google Gemini Free Tier.
 Guarantees robust string output (Never returns None).
 """
 
-from typing import List, Dict, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
 import google.genai as genai
 from google.genai import types as genai_types
 from openai import OpenAI
 
 from config import (
-    OPENROUTER_API_KEY,
     GEMINI_API_KEY,
-    OR_PRIMARY_MODEL,
-    OR_FALLBACK_MODEL,
     GEMINI_CHAT_MODEL,
+    OPENROUTER_API_KEY,
+    OR_FALLBACK_MODEL,
+    OR_PRIMARY_MODEL,
     SYSTEM_PROMPT,
-    MAX_RESEARCH_TOKENS,
 )
 
 

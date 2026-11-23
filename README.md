@@ -1,6 +1,11 @@
 # 🧠 SmartResearch Chatbot (Agentic-RAG Architecture)
 
-A production-grade, enterprise autonomous research system combining **Persistent Vector Memory** with **Live Real-Time Web Intelligence**.
+[![CI Pipeline](https://github.com/mr-sagarajput/SmartResearch-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/mr-sagarajput/SmartResearch-Agent/actions/workflows/ci.yml)
+[![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A production-grade, enterprise autonomous research system combining **Persistent Vector Memory** with **Live Real-Time Web Intelligence** and **Automated Academic PDF Report Compilation**.
 
 ---
 
@@ -9,49 +14,157 @@ A production-grade, enterprise autonomous research system combining **Persistent
 1. **Dual-Intent Mode Engine:**
    - **Mode 1 (Smart Q&A & Document Chat):**
      - Queries local vector memory first.
-     - If data is missing (`score < 0.35`), it quietly fetches real-time web facts, responds in chat, and saves the new knowledge to memory.
+     - If data confidence is below threshold (`score < 0.35`), it quietly fetches real-time web facts, responds in chat, and saves the new knowledge to vector memory.
      - **Zero clutter:** No unwanted PDF reports are generated during regular chat.
    - **Mode 2 (Deep Autonomous Topic Research):**
      - Triggered explicitly via `/research <topic>` in CLI or via Tab 2 in Streamlit.
-     - Crawls multiple live web pages, writes an executive synthesis, and **saves a formal PDF report in `output/`**.
-     - **Instant Chat:** Automatically indexes that fresh report into active memory so you can immediately ask follow-up questions!
+     - Executes a structured **5-Pillar Academic Study** (Foundations, Taxonomy, Methodologies, Applications, Limitations).
+     - Crawls multiple authoritative web sources, writes an executive synthesis, and **saves a formal PDF report in `output/`**.
+     - **Instant In-Line Chat:** Automatically indexes that fresh report into active memory so you can immediately ask follow-up questions!
 
-2. **100-Batch Embedding Pacing & Adaptive 429 Resilience:**
-   - Slices large books/documents (1000+ pages) into strict 100-chunk batches.
+2. **Decoupled Domain Data Models:**
+   - Strictly typed Python `@dataclass` domain entities in `core/models.py` (`ResearchPillar`, `SearchResult`, `VectorMatch`, `DocumentChunk`, `RouterDecision`, `DeepResearchResult`, `ChatMessage`, `ChatSessionState`).
+   - Bidirectional serialization (`to_dict()`, `from_dict()`) with full dictionary backward-compatibility.
+
+3. **100-Batch Embedding Pacing & Adaptive 429 Resilience:**
+   - Slices large books and documents (1000+ pages) into strict 100-chunk batches.
    - Paces requests to respect Google Gemini Free Tier limits.
-   - **Regex-based Adaptive Interceptor:** Intercepts `429 RESOURCE_EXHAUSTED`, auto-waits 60s, and resumes without ever crashing.
+   - **Regex-based Adaptive Interceptor:** Intercepts `429 RESOURCE_EXHAUSTED`, auto-waits with exponential backoff, and resumes without crashing.
 
-3. **Dual-LLM Gateway (Infinite Uptime):**
+4. **Dual-LLM Gateway (Infinite Uptime):**
    - **Primary:** OpenRouter Free Models (`nvidia/nemotron-3.5-lightning:free` & `liquid/lfm-3-1.7b:free`).
    - **Backup:** Seamlessly cascades to Google Gemini 2.5 Flash if OpenRouter daily limits are reached.
 
 ---
 
-## 🚀 How to Run
+## 🏗️ Repository Architecture
 
-### 1. Modern Web UI (Streamlit)
-Double-click the **`SmartResearch Chatbot`** shortcut on your Desktop, or run:
-```powershell
-cd "d:\Projects\SmartResearch Chatbot"
-streamlit run app.py
+```text
+SmartResearch Chatbot/
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # Automated Ruff linting & test suite execution on push/PR
+├── core/
+│   ├── __init__.py              # Core package initialization & exports
+│   ├── models.py                # Typed domain dataclasses with serialization
+│   ├── router.py                # Query intent classification & threshold routing
+│   ├── agent_router.py          # Backward-compatibility facade
+│   ├── vector_engine.py         # Caching, SHA-256 fingerprinting, cosine similarity
+│   ├── llm_gateway.py           # Gemini & OpenRouter clients with retry backoff
+│   ├── web_researcher.py        # 5-Pillar concurrent search dispatch & sanitization
+│   └── report_builder.py        # Academic ReportLab PDF compiler with Unicode sanitization
+├── tests/                       # Fully isolated, automated unit test suite (51 tests)
+│   ├── __init__.py              # Sys.path test root resolution
+│   ├── test_models.py           # Domain model serialization & attribute tests
+│   ├── test_router.py           # Decision boundaries & fallback tests
+│   ├── test_vector_engine.py    # Chunking & cosine similarity tests
+│   ├── test_llm_gateway.py      # LLM response extraction & safety tests
+│   ├── test_web_researcher.py   # Web scraper concurrency & validation tests
+│   └── test_report_builder.py   # PDF text sanitization & symbol tests
+├── app.py                       # Modern reactive Streamlit web interface
+├── cli.py                       # Interactive terminal CLI with /research commands
+├── config.py                    # Central configuration, env parsing, and thresholds
+├── pyproject.toml               # PEP 621 packaging metadata & Ruff configuration
+├── requirements.txt             # Pinned runtime dependencies
+├── Run_SmartResearch.bat        # Windows desktop launcher batch script
+├── .env.example                 # Example environment variables template
+└── README.md                    # Project documentation
 ```
-* **Tab 1:** Conversational Document & Smart Q&A.
-* **Tab 2:** Autonomous Deep Research with 1-Click PDF Report Download.
 
-### 2. Interactive Terminal CLI
-```powershell
-cd "d:\Projects\SmartResearch Chatbot"
+---
 
-# Full Open Mode (Web & Q&A):
+## 🚀 Installation & Setup
+
+### 1. Prerequisites
+- Python 3.10, 3.11, or 3.12
+- Git
+
+### 2. Clone and Setup Environment
+```bash
+git clone https://github.com/mr-sagarajput/SmartResearch-Agent.git
+cd "SmartResearch-Agent"
+
+# Create and activate virtual environment
+python -m venv .venv
+
+# Windows:
+.venv\Scripts\activate
+# Linux/macOS:
+source .venv/bin/activate
+```
+
+### 3. Install Package in Editable Mode
+```bash
+# Install runtime dependencies and the package
+pip install -e .
+
+# Or with dev dependencies:
+pip install -e ".[dev]"
+```
+
+### 4. Configure API Keys
+Copy `.env.example` to `.env` and fill in your keys:
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+```ini
+GEMINI_API_KEY=your_gemini_api_key_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+```
+
+---
+
+## 💻 Running the Application
+
+### Modern Web UI (Streamlit)
+```bash
+# Direct Streamlit:
+streamlit run app.py
+
+# Or on Windows via the launcher shortcut:
+Run_SmartResearch.bat
+```
+- **Tab 1:** Conversational Document & Smart Q&A with live web fallback.
+- **Tab 2:** Autonomous Deep Research with 1-Click PDF Report Download and in-line chat.
+
+### Interactive Terminal CLI
+```bash
+# Via installed entrypoint:
+smartresearch
+
+# Or directly with Python:
 python cli.py
 
-# Document-Grounded Mode (PDF + Auto Web Fallback):
+# Optional: Load a document directly:
 python cli.py "path/to/document.pdf"
 ```
 
 #### In-Terminal Commands:
-- `/research <topic>` — Conducts deep web research, generates a PDF in `output/`, and lets you chat with it.
+- `/research <topic>` — Conducts 5-pillar deep web research, generates a PDF in `output/`, and indexes it for live chat.
 - `/sources` — View citations & links from the previous answer.
 - `/clear` — Clear current chat session memory.
 - `/help` — View available commands.
 - `/quit` — Exit the assistant.
+
+---
+
+## 🧪 Testing & Code Quality
+
+### Running Unit Tests
+All 51 test cases run in `< 0.2s` with zero external network dependencies:
+```bash
+python -m unittest discover -s tests -t .
+```
+
+### Running Linter (Ruff)
+```bash
+ruff check .
+```
+
+---
+
+## 🛡️ License
+
+This project is licensed under the MIT License.

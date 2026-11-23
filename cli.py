@@ -10,13 +10,13 @@ Supports Dual-Intent Modes:
    - Immediately loads that report into conversational memory for instant Q&A!
 """
 
+from pathlib import Path
 import sys
 import textwrap
-from pathlib import Path
 
 from config import GEMINI_API_KEY, OPENROUTER_API_KEY
-from core.agent_router import execute_deep_research, process_query_with_router
 from core.llm_gateway import get_gemini_client
+from core.router import execute_deep_research, process_query_with_router
 from core.vector_engine import (
     build_document_chunks,
     compute_bytes_hash,
