@@ -18,7 +18,7 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
-from config import MAX_RESEARCH_TOKENS, SIMILARITY_THRESHOLD
+from core.config import MAX_RESEARCH_TOKENS, SIMILARITY_THRESHOLD
 from core.llm_gateway import execute_prompt, get_gemini_client
 from core.models import DeepResearchResult, DocumentChunk, RouterDecision
 from core.report_builder import generate_research_pdf_report

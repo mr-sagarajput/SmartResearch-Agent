@@ -25,7 +25,7 @@ try:
 except ImportError:
     from duckduckgo_search import DDGS
 
-from config import (
+from core.config import (
     CHAR_LIMIT_PER_PAGE,
     PAGE_LIMIT,
     REQUEST_DELAY_SECONDS,

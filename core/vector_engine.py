@@ -27,7 +27,7 @@ import numpy as np
 from pypdf import PdfReader
 import pypdfium2 as pdfium
 
-from config import (
+from core.config import (
     CACHE_DIR,
     CHUNK_OVERLAP,
     CHUNK_SIZE,

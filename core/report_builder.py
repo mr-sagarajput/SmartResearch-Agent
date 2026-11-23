@@ -20,7 +20,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
-from config import OUTPUT_DIR
+from core.config import OUTPUT_DIR
 
 
 def sanitize_text_for_pdf(text: str) -> str:

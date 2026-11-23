@@ -11,7 +11,7 @@ import google.genai as genai
 from google.genai import types as genai_types
 from openai import OpenAI
 
-from config import (
+from core.config import (
     GEMINI_API_KEY,
     GEMINI_CHAT_MODEL,
     OPENROUTER_API_KEY,

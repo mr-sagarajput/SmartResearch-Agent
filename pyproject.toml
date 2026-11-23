@@ -44,6 +44,9 @@ dev = [
 smartresearch = "cli:main"
 smartresearch-cli = "cli:main"
 
+[tool.setuptools]
+py-modules = ["config", "cli", "app"]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["core*"]
