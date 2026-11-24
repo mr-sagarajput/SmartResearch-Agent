@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config import SIMILARITY_THRESHOLD
+from core.config import SIMILARITY_THRESHOLD
 from core.router import execute_deep_research, process_query_with_router
 from core.vector_engine import DocumentChunk
 
@@ -58,11 +58,11 @@ class TestAgentRouterDecisionBoundaries(unittest.TestCase):
             chunk_embeddings=self.sample_embeddings,
         )
 
-        self.assertEqual(result["decision"], "VECTOR_HIT")
-        self.assertFalse(result["is_web_research"])
-        self.assertEqual(result["max_score"], high_score)
-        self.assertEqual(result["answer"], "Superposition allows massive parallelism.")
-        self.assertEqual(len(result["sources"]), 1)
+        self.assertEqual(result.decision, "VECTOR_HIT")
+        self.assertFalse(result.is_web_research)
+        self.assertEqual(result.max_score, high_score)
+        self.assertEqual(result.answer, "Superposition allows massive parallelism.")
+        self.assertEqual(len(result.sources), 1)
         mock_web_research.assert_not_called()
 
     @patch("core.router.get_gemini_client")
@@ -85,9 +85,9 @@ class TestAgentRouterDecisionBoundaries(unittest.TestCase):
             chunk_embeddings=self.sample_embeddings,
         )
 
-        self.assertEqual(result["decision"], "VECTOR_HIT")
-        self.assertFalse(result["is_web_research"])
-        self.assertEqual(result["max_score"], exact_score)
+        self.assertEqual(result.decision, "VECTOR_HIT")
+        self.assertFalse(result.is_web_research)
+        self.assertEqual(result.max_score, exact_score)
         mock_web_research.assert_not_called()
 
     @patch("core.router.get_gemini_client")
@@ -121,9 +121,9 @@ class TestAgentRouterDecisionBoundaries(unittest.TestCase):
             chunk_embeddings=self.sample_embeddings,
         )
 
-        self.assertEqual(result["decision"], "WEB_RESEARCH_TRIGGERED")
-        self.assertTrue(result["is_web_research"])
-        self.assertIn("Synthesized answer from live web.", result["answer"])
+        self.assertEqual(result.decision, "WEB_RESEARCH_TRIGGERED")
+        self.assertTrue(result.is_web_research)
+        self.assertIn("Synthesized answer from live web.", result.answer)
         mock_web_research.assert_called_once()
 
     @patch("core.router.get_gemini_client")
@@ -143,10 +143,10 @@ class TestAgentRouterDecisionBoundaries(unittest.TestCase):
             chunk_embeddings=self.sample_embeddings,
         )
 
-        self.assertEqual(result["decision"], "NOT_FOUND")
-        self.assertTrue(result["is_web_research"])
-        self.assertIn("could not find relevant information", result["answer"])
-        self.assertEqual(result["sources"], [])
+        self.assertEqual(result.decision, "NOT_FOUND")
+        self.assertTrue(result.is_web_research)
+        self.assertIn("could not find relevant information", result.answer)
+        self.assertEqual(result.sources, [])
 
     @patch("core.router.get_gemini_client")
     @patch("core.router.execute_prompt")
@@ -172,8 +172,8 @@ class TestAgentRouterDecisionBoundaries(unittest.TestCase):
             chunk_embeddings=None,
         )
 
-        self.assertEqual(result["decision"], "WEB_RESEARCH_TRIGGERED")
-        self.assertTrue(result["is_web_research"])
+        self.assertEqual(result.decision, "WEB_RESEARCH_TRIGGERED")
+        self.assertTrue(result.is_web_research)
 
     @patch("core.router.get_gemini_client")
     @patch("core.router.retrieve")
@@ -228,10 +228,10 @@ class TestAgentRouterDecisionBoundaries(unittest.TestCase):
             chunk_embeddings=None,
         )
 
-        self.assertTrue(res["success"])
-        self.assertEqual(res["topic"], "Quantum Computing")
-        self.assertEqual(res["summary"], synthesis_text)
-        self.assertEqual(res["pdf_path"], "/path/to/report.pdf")
+        self.assertTrue(res.success)
+        self.assertEqual(res.topic, "Quantum Computing")
+        self.assertEqual(res.summary, synthesis_text)
+        self.assertEqual(res.pdf_path, "/path/to/report.pdf")
 
     @patch("core.router.get_gemini_client")
     @patch("core.router.perform_5_pillar_research")
@@ -246,8 +246,8 @@ class TestAgentRouterDecisionBoundaries(unittest.TestCase):
             chunk_embeddings=None,
         )
 
-        self.assertFalse(res["success"])
-        self.assertIn("Could not gather sufficient verified research data", res["error"])
+        self.assertFalse(res.success)
+        self.assertIn("Could not gather sufficient verified research data", res.error)
 
 
 class TestAgentRouterBackwardCompatibility(unittest.TestCase):

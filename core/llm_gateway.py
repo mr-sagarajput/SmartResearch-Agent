@@ -18,6 +18,7 @@ from core.config import (
     OR_FALLBACK_MODEL,
     OR_PRIMARY_MODEL,
     SYSTEM_PROMPT,
+    logger,
 )
 
 
@@ -41,11 +42,28 @@ def get_gemini_client() -> Optional[genai.Client]:
     if not GEMINI_API_KEY:
         return None
     try:
+        retry_options = getattr(genai_types, "HttpRetryOptions", None)
+        if retry_options is not None:
+            http_options = genai_types.HttpOptions(
+                api_version="v1beta",
+                retry_options=genai_types.HttpRetryOptions(
+                    attempts=5,
+                    initial_delay=1.0,
+                    max_delay=60.0,
+                    exp_base=2.0,
+                    jitter=1.0,
+                    http_status_codes=[408, 429, 500, 502, 503, 504],
+                ),
+            )
+        else:
+            http_options = genai_types.HttpOptions(api_version="v1beta")
+
         return genai.Client(
             api_key=GEMINI_API_KEY,
-            http_options=genai_types.HttpOptions(api_version="v1beta"),
+            http_options=http_options,
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to initialize Gemini client: {e}")
         return None
 
 
@@ -107,7 +125,7 @@ def execute_prompt(
             if extracted:
                 return extracted, f"OpenRouter ({OR_PRIMARY_MODEL})"
         except Exception as e:
-            print(f"[OpenRouter Primary Fail]: {e}")
+            logger.warning(f"OpenRouter Primary Fail: {e}")
 
     # 2. Try OpenRouter Secondary directly
     if openrouter_client:
@@ -126,7 +144,7 @@ def execute_prompt(
             if extracted:
                 return extracted, f"OpenRouter Fallback ({OR_FALLBACK_MODEL})"
         except Exception as e:
-            print(f"[OpenRouter Fallback Fail]: {e}")
+            logger.warning(f"OpenRouter Fallback Fail: {e}")
 
     # 3. Native Google Gemini Cloud Fallback
     if gemini_client:

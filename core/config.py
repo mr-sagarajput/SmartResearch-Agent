@@ -7,6 +7,7 @@ Orchestrates:
 3. Dual-LLM Gateway: OpenRouter (Primary) + Google Gemini (Infinite Fallback)
 """
 
+import logging
 import os
 from pathlib import Path
 
@@ -14,6 +15,14 @@ from dotenv import load_dotenv
 
 # Load credentials from .env
 load_dotenv()
+
+# --- Central Logger ---
+logging.basicConfig(
+    format="[%(asctime)s] [%(levelname)s] [%(name)s]: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+)
+logger = logging.getLogger("smartresearch")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 

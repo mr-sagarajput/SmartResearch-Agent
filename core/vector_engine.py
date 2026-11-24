@@ -15,8 +15,8 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 import io
+import json
 from pathlib import Path
-import pickle
 import re
 import time
 from typing import List, Optional, Tuple
@@ -34,6 +34,7 @@ from core.config import (
     EMBED_MODEL,
     TOP_K,
     VISION_MODEL,
+    logger,
 )
 from core.models import DocumentChunk
 
@@ -42,30 +43,53 @@ def compute_bytes_hash(file_bytes: bytes) -> str:
     return hashlib.sha256(file_bytes).hexdigest()
 
 
+def get_cache_paths(file_hash: str) -> Tuple[Path, Path]:
+    """Returns paths for the dual-file vector cache (npz embeddings and json chunks)."""
+    return CACHE_DIR / f"{file_hash}.npz", CACHE_DIR / f"{file_hash}.chunks.json"
+
+
 def get_cache_path(file_hash: str) -> Path:
-    return CACHE_DIR / f"{file_hash}.pkl"
+    """Backward-compatible helper returning the primary embeddings cache path."""
+    return CACHE_DIR / f"{file_hash}.npz"
 
 
 def load_cached_embeddings(file_hash: str) -> Optional[Tuple[List[DocumentChunk], np.ndarray]]:
-    cache_file = get_cache_path(file_hash)
-    if not cache_file.exists():
+    """
+    Safely loads cached embeddings and chunks without insecure pickle deserialization:
+    - Embeddings: float32 numpy array loaded with allow_pickle=False.
+    - Chunks: validated JSON payload.
+    """
+    npz_path, json_path = get_cache_paths(file_hash)
+    if not (npz_path.exists() and json_path.exists()):
+        # Safely remove any unvalidated legacy .pkl file without executing it
+        legacy_pkl = CACHE_DIR / f"{file_hash}.pkl"
+        if legacy_pkl.exists():
+            legacy_pkl.unlink(missing_ok=True)
         return None
+
     try:
-        with open(cache_file, "rb") as f:
-            data = pickle.load(f)
+        # Load and validate chunk metadata JSON
+        with json_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
         if data.get("embed_model") != EMBED_MODEL:
             return None
-        chunks = [
-            DocumentChunk(
-                chunk_id=c["chunk_id"],
-                source=c.get("source", f"Page {c.get('page', 1)}"),
-                page=c.get("page", 1),
-                text=c["text"],
-                url=c.get("url", ""),
-            )
-            for c in data["chunks"]
-        ]
-        embeddings = np.array(data["embeddings"], dtype=np.float32)
+
+        raw_chunks = data.get("chunks", [])
+        chunks = [DocumentChunk.from_dict(c) for c in raw_chunks]
+
+        # Load embeddings with zero pickle execution risk
+        with np.load(npz_path, allow_pickle=False) as npz_data:
+            if "embed_model" in npz_data:
+                stored_model = str(npz_data["embed_model"])
+                if stored_model != EMBED_MODEL:
+                    return None
+            embeddings = npz_data["embeddings"].astype(np.float32)
+
+        # Integrity verification: chunks count must match embedding vector rows
+        if len(embeddings) != len(chunks):
+            return None
+
         return chunks, embeddings
     except Exception:
         return None
@@ -76,17 +100,47 @@ def save_cached_embeddings(
     chunks: List[DocumentChunk],
     embeddings: np.ndarray,
 ) -> None:
-    cache_file = get_cache_path(file_hash)
-    data = {
-        "embed_model": EMBED_MODEL,
-        "chunks": [asdict(c) for c in chunks],
-        "embeddings": embeddings,
-    }
+    """
+    Atomically writes compressed vector embeddings (.npz) and chunk metadata (.json).
+    Replaces insecure pickle serialization and cleans up any old .pkl files.
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    npz_path, json_path = get_cache_paths(file_hash)
+    tmp_npz = CACHE_DIR / f"{file_hash}_tmp.npz"
+    tmp_json = CACHE_DIR / f"{file_hash}_chunks_tmp.json"
+
     try:
-        with open(cache_file, "wb") as f:
-            pickle.dump(data, f)
+        # 1. Save embeddings tensor safely
+        np.savez_compressed(
+            tmp_npz,
+            embeddings=np.asarray(embeddings, dtype=np.float32),
+            embed_model=np.array(EMBED_MODEL),
+        )
+
+        # 2. Save chunk metadata as validated UTF-8 JSON
+        chunks_payload = {
+            "embed_model": EMBED_MODEL,
+            "chunk_count": len(chunks),
+            "chunks": [c.to_dict() if hasattr(c, "to_dict") else asdict(c) for c in chunks],
+        }
+        with tmp_json.open("w", encoding="utf-8") as f:
+            json.dump(chunks_payload, f, ensure_ascii=False, indent=2)
+
+        # 3. Atomic replacement
+        tmp_npz.replace(npz_path)
+        tmp_json.replace(json_path)
+
+        # 4. Safely clean legacy .pkl if present
+        legacy_pkl = CACHE_DIR / f"{file_hash}.pkl"
+        if legacy_pkl.exists():
+            legacy_pkl.unlink(missing_ok=True)
+
     except Exception as e:
-        print(f"[Warning] Failed to write cache: {e}")
+        logger.warning(f"Failed to write cache: {e}")
+        if tmp_npz.exists():
+            tmp_npz.unlink(missing_ok=True)
+        if tmp_json.exists():
+            tmp_json.unlink(missing_ok=True)
 
 
 def ocr_page_image(gemini_client: genai.Client, image_bytes: bytes) -> str:
@@ -102,7 +156,7 @@ def ocr_page_image(gemini_client: genai.Client, image_bytes: bytes) -> str:
         )
         return response.text.strip()
     except Exception as e:
-        print(f"Vision OCR error: {e}")
+        logger.warning(f"Vision OCR error: {e}")
         return ""
 
 
@@ -232,9 +286,11 @@ def embed_content_with_retry(
     contents: str | list[str],
     config: genai_types.EmbedContentConfig,
     status_callback=None,
+    max_retries: int = 4,
 ) -> genai_types.EmbedContentResponse:
-    """Wrapper around embed_content with dynamic 429 retry and rate limit backoff."""
-    while True:
+    """Wrapper around embed_content with bounded 429 retry and rate limit backoff."""
+    attempt = 0
+    while attempt <= max_retries:
         try:
             return gemini_client.models.embed_content(
                 model=model,
@@ -244,7 +300,12 @@ def embed_content_with_retry(
         except (genai_errors.ClientError, genai_errors.APIError, Exception) as exc:
             err_msg = str(exc)
             if getattr(exc, "code", None) == 429 or "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                wait_sec = 60.0
+                attempt += 1
+                if attempt > max_retries:
+                    raise RuntimeError(
+                        f"Google Gemini embedding quota exhausted after {max_retries} attempts: {err_msg}"
+                    ) from exc
+                wait_sec = 15.0 * (2 ** (attempt - 1))
                 match = re.search(
                     r"(?:retryDelay|retry in|retry after)[\"':\s]*([0-9]+(?:\.[0-9]+)?)\s*s?",
                     err_msg,
@@ -252,13 +313,13 @@ def embed_content_with_retry(
                 )
                 if match:
                     try:
-                        wait_sec = float(match.group(1))
+                        wait_sec = max(float(match.group(1)), wait_sec)
                     except ValueError:
-                        wait_sec = 60.0
+                        pass
 
-                total_wait = wait_sec + 2.0
-                log_msg = f"⏳ [Rate Limit] Free tier quota reached (429). Auto-waiting {total_wait:.0f}s before resuming..."
-                print(f"\n{log_msg}", flush=True)
+                total_wait = min(wait_sec + 2.0, 60.0)
+                log_msg = f"⏳ [Rate Limit] Free tier quota reached (429). Attempt {attempt}/{max_retries}. Auto-waiting {total_wait:.0f}s before resuming..."
+                logger.info(log_msg)
                 if status_callback:
                     status_callback(log_msg)
                 time.sleep(total_wait)
@@ -273,7 +334,7 @@ def embed_chunks(
 ) -> np.ndarray:
     """
     Embeds chunks in strict batches of 100.
-    For multi-batch large documents (e.g., 1000 pages), applies pacing pauses
+    For multi-batch large documents (e.g., 1000 pages), applies adaptive pacing pauses
     to prevent Google Gemini Free Tier 429 exhaustion.
     """
     texts = [c.text for c in chunks]
@@ -299,11 +360,12 @@ def embed_chunks(
         for emb in response.embeddings:
             all_embeddings.append(emb.values)
 
-        # Apply safe pacing between batches for large multi-batch files
+        # Apply safe adaptive pacing between batches for large multi-batch files
         if batch_idx < total_batches:
+            pacing_delay = 5.0 if total_batches <= 5 else 10.0
             if progress_callback:
-                progress_callback("⏳ Pacing between batches to protect Free Tier quota (Waiting 15s)...")
-            time.sleep(15.0)
+                progress_callback(f"⏳ Pacing between batches to protect Free Tier quota (Waiting {pacing_delay:.0f}s)...")
+            time.sleep(pacing_delay)
 
     return np.array(all_embeddings, dtype=np.float32)
 

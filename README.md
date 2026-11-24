@@ -3,7 +3,6 @@
 [![CI Pipeline](https://github.com/mr-sagarajput/SmartResearch-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/mr-sagarajput/SmartResearch-Agent/actions/workflows/ci.yml)
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](https://www.python.org/)
 [![Code Style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A production-grade, enterprise autonomous research system combining **Persistent Vector Memory** with **Live Real-Time Web Intelligence** and **Automated Academic PDF Report Compilation**.
 
@@ -24,16 +23,22 @@ A production-grade, enterprise autonomous research system combining **Persistent
 
 2. **Decoupled Domain Data Models:**
    - Strictly typed Python `@dataclass` domain entities in `core/models.py` (`ResearchPillar`, `SearchResult`, `VectorMatch`, `DocumentChunk`, `RouterDecision`, `DeepResearchResult`, `ChatMessage`, `ChatSessionState`).
-   - Bidirectional serialization (`to_dict()`, `from_dict()`) with full dictionary backward-compatibility.
+   - Bidirectional serialization (`to_dict()`, `from_dict()`) with strict attribute access.
 
-3. **100-Batch Embedding Pacing & Adaptive 429 Resilience:**
+3. **Secure Vector Storage (.npz & .json):**
+   - Eliminated Python `pickle` deserialization vulnerabilities entirely.
+   - Dual-file atomic persistence (`.npz` for numpy embeddings via `allow_pickle=False`, `.chunks.json` for document metadata).
+   - Atomic temporary-file swapping prevents cache corruption during interrupted sessions.
+
+4. **100-Batch Embedding Pacing & Adaptive 429 Resilience:**
    - Slices large books and documents (1000+ pages) into strict 100-chunk batches.
-   - Paces requests to respect Google Gemini Free Tier limits.
+   - Paces requests to respect Google Gemini Free Tier limits with dynamic pacing.
    - **Regex-based Adaptive Interceptor:** Intercepts `429 RESOURCE_EXHAUSTED`, auto-waits with exponential backoff, and resumes without crashing.
 
-4. **Dual-LLM Gateway (Infinite Uptime):**
+5. **Dual-LLM Gateway with Native HTTP Retry Resilience:**
    - **Primary:** OpenRouter Free Models (`nvidia/nemotron-3.5-lightning:free` & `liquid/lfm-3-1.7b:free`).
    - **Backup:** Seamlessly cascades to Google Gemini 2.5 Flash if OpenRouter daily limits are reached.
+   - Built-in native SDK `HttpRetryOptions` with exponential backoff and randomized anti-scraping jitter.
 
 ---
 
@@ -53,14 +58,15 @@ SmartResearch Chatbot/
 │   ├── llm_gateway.py           # Gemini & OpenRouter clients with retry backoff
 │   ├── web_researcher.py        # 5-Pillar concurrent search dispatch & sanitization
 │   └── report_builder.py        # Academic ReportLab PDF compiler with Unicode sanitization
-├── tests/                       # Fully isolated, automated unit test suite (51 tests)
+├── tests/                       # Fully isolated, automated unit test suite (62 tests)
 │   ├── __init__.py              # Sys.path test root resolution
 │   ├── test_models.py           # Domain model serialization & attribute tests
 │   ├── test_router.py           # Decision boundaries & fallback tests
-│   ├── test_vector_engine.py    # Chunking & cosine similarity tests
-│   ├── test_llm_gateway.py      # LLM response extraction & safety tests
+│   ├── test_vector_engine.py    # Chunking, safe .npz persistence & similarity tests
+│   ├── test_llm_gateway.py      # LLM response extraction, retry & client tests
 │   ├── test_web_researcher.py   # Web scraper concurrency & validation tests
-│   └── test_report_builder.py   # PDF text sanitization & symbol tests
+│   ├── test_report_builder.py   # PDF text sanitization & symbol tests
+│   └── test_ui_contract.py      # Streamlit UI & CLI end-to-end integration contracts
 ├── app.py                       # Modern reactive Streamlit web interface
 ├── cli.py                       # Interactive terminal CLI with /research commands
 ├── config.py                    # Central configuration, env parsing, and thresholds
@@ -153,7 +159,7 @@ python cli.py "path/to/document.pdf"
 ## 🧪 Testing & Code Quality
 
 ### Running Unit Tests
-All 51 test cases run in `< 0.2s` with zero external network dependencies:
+All 62 test cases run in `< 0.8s` with zero external network dependencies:
 ```bash
 python -m unittest discover -s tests -t .
 ```
@@ -167,4 +173,4 @@ ruff check .
 
 ## 🛡️ License
 
-This project is licensed under the MIT License.
+Copyright (c) 2026 Sagar Rajput. All Rights Reserved. Proprietary software.

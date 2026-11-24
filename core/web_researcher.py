@@ -11,6 +11,7 @@ Includes defensive error-handling to prevent NoneType attribute errors.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import random
 import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -32,6 +33,7 @@ from core.config import (
     REQUEST_TIMEOUT_SECONDS,
     RESULTS_PER_QUERY,
     USER_AGENT,
+    logger,
 )
 from core.llm_gateway import execute_prompt
 from core.models import ResearchPillar, SearchResult
@@ -79,7 +81,9 @@ def search_web(query: str, max_results: int = RESULTS_PER_QUERY) -> List[Dict[st
         return results
 
     try:
-        time.sleep(REQUEST_DELAY_SECONDS)
+        # Randomized jitter to prevent automated request fingerprinting
+        jitter = random.uniform(REQUEST_DELAY_SECONDS, REQUEST_DELAY_SECONDS + 1.5)
+        time.sleep(jitter)
         with DDGS() as ddgs:
             search_gen = ddgs.text(clean_query, max_results=max_results + 3)
             for item in search_gen:
@@ -94,7 +98,7 @@ def search_web(query: str, max_results: int = RESULTS_PER_QUERY) -> List[Dict[st
                     continue
                 results.append({"title": title, "url": url})
     except Exception as e:
-        print(f"[Search Notice]: {e}")
+        logger.warning(f"DuckDuckGo search error for '{clean_query}': {e}")
 
     return results
 
@@ -109,7 +113,8 @@ def fetch_article_text(url: str) -> Optional[str]:
         return None
 
     try:
-        time.sleep(REQUEST_DELAY_SECONDS)
+        jitter = random.uniform(REQUEST_DELAY_SECONDS * 0.5, REQUEST_DELAY_SECONDS)
+        time.sleep(jitter)
         headers = {
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml",
@@ -169,12 +174,12 @@ def _research_single_pillar(
     status_callback=None,
 ) -> Optional[Dict[str, Any]]:
     """Researches a single academic pillar in an isolated thread worker."""
-    pillar_name = item["pillar"]
-    search_phrase = item["query"]
+    pillar_name = item.pillar if hasattr(item, "pillar") else item["pillar"]
+    search_phrase = item.query if hasattr(item, "query") else item["query"]
 
-    # Polite stagger to prevent burst rate limits on search providers
+    # Polite randomized stagger to prevent burst rate limits on search providers
     if idx > 1:
-        time.sleep((idx - 1) * 0.25)
+        time.sleep((idx - 1) * random.uniform(0.2, 0.4))
 
     if status_callback:
         try:
@@ -219,7 +224,7 @@ def _research_single_pillar(
         try:
             raw_notes, _ = execute_prompt(prompt, max_tokens=300)
         except Exception as e:
-            print(f"[LLM Extraction Note]: {e}")
+            logger.warning(f"LLM extraction note for pillar '{pillar_name}': {e}")
             raw_notes = ""
 
         # Defensive Null-Safety: (raw_notes or "").strip()
@@ -272,7 +277,7 @@ def perform_5_pillar_research(topic: str, status_callback=None) -> List[Research
                 if result:
                     collected.append((idx, result))
             except Exception as e:
-                print(f"[Pillar {idx} Research Error]: {e}")
+                logger.warning(f"Pillar {idx} Research Error: {e}")
 
     # Maintain canonical 1..5 pillar ordering
     collected.sort(key=lambda x: x[0])
@@ -327,7 +332,7 @@ def perform_live_research(topic: str, max_pages: int = PAGE_LIMIT, status_callba
                     full_snippet=raw_text[:1200],
                 )
         except Exception as e:
-            print(f"[Live Research Fetch Error]: {e}")
+            logger.warning(f"Live Research Fetch Error: {e}")
         return None
 
     results_indexed: List[Tuple[int, SearchResult]] = []
@@ -339,7 +344,7 @@ def perform_live_research(topic: str, max_pages: int = PAGE_LIMIT, status_callba
                 if res:
                     results_indexed.append(res)
             except Exception as e:
-                print(f"[Live Fetch Thread Error]: {e}")
+                logger.warning(f"Live Fetch Thread Error: {e}")
 
     results_indexed.sort(key=lambda x: x[0])
     return [item for _, item in results_indexed]

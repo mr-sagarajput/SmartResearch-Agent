@@ -10,7 +10,9 @@ Validates:
 from dataclasses import asdict
 from pathlib import Path
 import sys
+import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -24,6 +26,10 @@ from core.vector_engine import (
     build_document_chunks,
     compute_bytes_hash,
     cosine_similarity,
+    embed_content_with_retry,
+    get_cache_paths,
+    load_cached_embeddings,
+    save_cached_embeddings,
     split_text_smart,
 )
 
@@ -161,6 +167,102 @@ class TestVectorEngine(unittest.TestCase):
         self.assertAlmostEqual(sims[0], 1.0, places=4)
         self.assertAlmostEqual(sims[1], 0.0, places=4)
         self.assertAlmostEqual(sims[2], -1.0, places=4)
+
+    @patch("time.sleep")
+    def test_embed_content_with_retry_exceeds_max_retries(self, mock_sleep):
+        """When 429 persists, embed_content_with_retry should raise RuntimeError after max_retries."""
+        mock_client = MagicMock()
+        mock_client.models.embed_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: quota exceeded")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            embed_content_with_retry(
+                gemini_client=mock_client,
+                model="gemini-embedding-001",
+                contents="test content",
+                config=MagicMock(),
+                max_retries=2,
+            )
+
+        self.assertIn("embedding quota exhausted after 2 attempts", str(ctx.exception))
+        # Initial call + 2 retries = 3 calls
+        self.assertEqual(mock_client.models.embed_content.call_count, 3)
+        self.assertEqual(mock_sleep.call_count, 2)
+
+    @patch("time.sleep")
+    def test_embed_content_with_retry_succeeds_after_retry(self, mock_sleep):
+        """embed_content_with_retry should recover and return response when a retry succeeds."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_client.models.embed_content.side_effect = [
+            Exception("429 RESOURCE_EXHAUSTED"),
+            mock_response,
+        ]
+
+        res = embed_content_with_retry(
+            gemini_client=mock_client,
+            model="gemini-embedding-001",
+            contents="test content",
+            config=MagicMock(),
+            max_retries=3,
+        )
+
+        self.assertEqual(res, mock_response)
+        self.assertEqual(mock_client.models.embed_content.call_count, 2)
+        self.assertEqual(mock_sleep.call_count, 1)
+
+    def test_safe_cache_roundtrip(self):
+        """save_cached_embeddings and load_cached_embeddings should write npz+json and restore data."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch("core.vector_engine.CACHE_DIR", tmp_path):
+                test_hash = "test_sha256_hash_12345"
+                chunks = [
+                    DocumentChunk(chunk_id=1, source="Doc A", page=1, text="Chunk 1 text", url="https://example.com/1"),
+                    DocumentChunk(chunk_id=2, source="Doc A", page=2, text="Chunk 2 text", url="https://example.com/2"),
+                ]
+                embeddings = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], dtype=np.float32)
+
+                save_cached_embeddings(test_hash, chunks, embeddings)
+
+                npz_file, json_file = get_cache_paths(test_hash)
+                self.assertTrue(npz_file.exists())
+                self.assertTrue(json_file.exists())
+
+                loaded = load_cached_embeddings(test_hash)
+                self.assertIsNotNone(loaded)
+                loaded_chunks, loaded_embeddings = loaded
+
+                self.assertEqual(len(loaded_chunks), 2)
+                self.assertEqual(loaded_chunks[0].text, "Chunk 1 text")
+                self.assertEqual(loaded_chunks[1].source, "Doc A")
+                np.testing.assert_array_almost_equal(loaded_embeddings, embeddings)
+
+    def test_load_cached_embeddings_miss_and_legacy_cleanup(self):
+        """Cache miss returns None, and unvalidated legacy .pkl files are removed safely."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch("core.vector_engine.CACHE_DIR", tmp_path):
+                test_hash = "nonexistent_hash"
+                legacy_file = tmp_path / f"{test_hash}.pkl"
+                legacy_file.write_bytes(b"dummy legacy content")
+                self.assertTrue(legacy_file.exists())
+
+                loaded = load_cached_embeddings(test_hash)
+                self.assertIsNone(loaded)
+                self.assertFalse(legacy_file.exists())
+
+    def test_load_cached_embeddings_dimension_mismatch(self):
+        """If chunk count does not match embedding matrix rows, cache load must reject and return None."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            with patch("core.vector_engine.CACHE_DIR", tmp_path):
+                test_hash = "dimension_mismatch_hash"
+                chunks = [DocumentChunk(chunk_id=1, source="Doc", page=1, text="Only one chunk")]
+                embeddings = np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32)  # 2 vectors for 1 chunk
+
+                save_cached_embeddings(test_hash, chunks, embeddings)
+                loaded = load_cached_embeddings(test_hash)
+                self.assertIsNone(loaded)
 
 
 if __name__ == "__main__":

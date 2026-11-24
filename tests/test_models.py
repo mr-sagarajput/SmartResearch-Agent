@@ -1,6 +1,6 @@
 """
 Unit tests for core/models.py domain models.
-Validates serialization, deserialization, attribute typing, and dictionary backward-compatibility for:
+Validates serialization, deserialization, and attribute typing for:
 - ResearchPillar
 - SearchResult
 - DocumentChunk
@@ -54,12 +54,10 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.pillar, pillar.pillar)
         self.assertEqual(reconstructed.url, pillar.url)
 
-        # Dict subscript access & in operator
-        self.assertEqual(pillar["pillar"], "1. Introduction & Foundational Concepts")
-        self.assertTrue("pillar" in pillar)
-        self.assertTrue("query" in pillar)
-        self.assertEqual(pillar.get("nonexistent", "default"), "default")
-        pillar["notes"] = "Updated note"
+        # Typed attribute access
+        self.assertEqual(pillar.pillar, "1. Introduction & Foundational Concepts")
+        self.assertEqual(pillar.query, "quantum computing overview")
+        pillar.notes = "Updated note"
         self.assertEqual(pillar.notes, "Updated note")
 
     def test_search_result_to_and_from_dict(self):
@@ -77,11 +75,10 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.title, res.title)
         self.assertEqual(reconstructed.notes, res.notes)
 
-        # Dict subscript access
-        self.assertEqual(res["title"], "MIT Tech Review")
-        self.assertTrue("url" in res)
-        self.assertEqual(res.get("notes"), "Emerging technology trends.")
-        res["notes"] = "Changed"
+        # Typed attribute access
+        self.assertEqual(res.title, "MIT Tech Review")
+        self.assertEqual(res.url, "https://technologyreview.com/article")
+        res.notes = "Changed"
         self.assertEqual(res.notes, "Changed")
 
     def test_document_chunk_to_and_from_dict(self):
@@ -101,10 +98,10 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.chunk_id, 42)
         self.assertEqual(reconstructed.text, chunk.text)
 
-        # Dict subscript access
-        self.assertEqual(chunk["chunk_id"], 42)
-        self.assertTrue("text" in chunk)
-        chunk["page"] = 8
+        # Typed attribute access
+        self.assertEqual(chunk.chunk_id, 42)
+        self.assertEqual(chunk.source, "Page 7")
+        chunk.page = 8
         self.assertEqual(chunk.page, 8)
 
     def test_vector_match_to_and_from_dict(self):
@@ -124,10 +121,9 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.score, 0.92)
         self.assertEqual(reconstructed.chunk.chunk_id, 1)
 
-        # Dict subscript access
-        self.assertEqual(match["score"], 0.92)
-        self.assertTrue("chunk" in match)
-        self.assertEqual(match.get("score"), 0.92)
+        # Typed attribute access
+        self.assertEqual(match.score, 0.92)
+        self.assertEqual(match.chunk.text, "Vector search uses cosine similarity.")
 
     def test_router_decision_to_and_from_dict(self):
         decision = RouterDecision(
@@ -148,11 +144,10 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.answer, decision.answer)
         self.assertEqual(reconstructed.max_score, 0.88)
 
-        # Dict subscript access & methods
-        self.assertEqual(decision["decision"], "VECTOR_HIT")
-        self.assertTrue("answer" in decision)
-        self.assertEqual(decision.get("provider"), "Google Gemini")
-        decision["is_web_research"] = True
+        # Typed attribute access
+        self.assertEqual(decision.decision, "VECTOR_HIT")
+        self.assertEqual(decision.provider, "Google Gemini")
+        decision.is_web_research = True
         self.assertTrue(decision.is_web_research)
 
     def test_deep_research_result_to_and_from_dict(self):
@@ -173,11 +168,10 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertTrue(reconstructed.success)
         self.assertEqual(reconstructed.summary, result.summary)
 
-        # Dict subscript access & methods
-        self.assertEqual(result["topic"], "Artificial Intelligence")
-        self.assertTrue("pdf_path" in result)
-        self.assertEqual(result.get("pdf_path"), "/path/to/report.pdf")
-        result["success"] = False
+        # Typed attribute access
+        self.assertEqual(result.topic, "Artificial Intelligence")
+        self.assertEqual(result.pdf_path, "/path/to/report.pdf")
+        result.success = False
         self.assertFalse(result.success)
 
     def test_chat_message_to_and_from_dict(self):
@@ -195,10 +189,9 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.role, "user")
         self.assertEqual(reconstructed.content, "Explain transformers.")
 
-        # Dict subscript access
-        self.assertEqual(msg["role"], "user")
-        self.assertTrue("content" in msg)
-        self.assertEqual(msg.get("role"), "user")
+        # Typed attribute access
+        self.assertEqual(msg.role, "user")
+        self.assertEqual(msg.content, "Explain transformers.")
 
     def test_chat_session_state_to_and_from_dict(self):
         state = ChatSessionState(
@@ -220,11 +213,10 @@ class TestModelsSerialization(unittest.TestCase):
         self.assertEqual(reconstructed.chunks_count, 10)
         self.assertEqual(len(reconstructed.messages), 1)
 
-        # Dict subscript access
-        self.assertEqual(state["uploaded_pdf_name"], "sample.pdf")
-        self.assertTrue("file_hash" in state)
-        self.assertEqual(state.get("active_topic"), "Robotics")
-        state["chunks_count"] = 25
+        # Typed attribute access
+        self.assertEqual(state.uploaded_pdf_name, "sample.pdf")
+        self.assertEqual(state.active_topic, "Robotics")
+        state.chunks_count = 25
         self.assertEqual(state.chunks_count, 25)
 
 

@@ -14,7 +14,7 @@ from pathlib import Path
 import sys
 import textwrap
 
-from config import GEMINI_API_KEY, OPENROUTER_API_KEY
+from core.config import GEMINI_API_KEY, OPENROUTER_API_KEY
 from core.llm_gateway import get_gemini_client
 from core.router import execute_deep_research, process_query_with_router
 from core.vector_engine import (
@@ -158,22 +158,24 @@ def main():
                 status_callback=cli_status,
             )
 
-            if res.get("success"):
-                if res.get("updated_embeddings") is not None:
-                    chunk_embeddings = res["updated_embeddings"]
+            if getattr(res, "success", False):
+                if getattr(res, "updated_embeddings", None) is not None:
+                    chunk_embeddings = res.updated_embeddings
+                if getattr(res, "updated_chunks", None) is not None:
+                    chunks = res.updated_chunks
 
                 print("\n" + "=" * 65)
-                print(f"📄 Research Report Generated & Saved to:\n   {res['pdf_path']}")
+                print(f"📄 Research Report Generated & Saved to:\n   {res.pdf_path}")
                 print("=" * 65 + "\n")
-                print_wrapped(res["summary"])
+                print_wrapped(res.summary)
                 print("\n" + "─" * 65)
                 print("💬 [Research Indexed into Memory! You can now chat directly about this report]")
                 print("─" * 65 + "\n")
 
                 history.append({"role": "user", "content": f"Research topic: {research_topic}"})
-                history.append({"role": "assistant", "content": res["summary"]})
+                history.append({"role": "assistant", "content": res.summary})
             else:
-                print(f"\n❌ Research failed: {res.get('error')}\n")
+                print(f"\n❌ Research failed: {getattr(res, 'error', 'Unknown error')}\n")
             continue
 
         # -------------------------------------------------------------
@@ -189,21 +191,23 @@ def main():
                 status_callback=cli_status,
             )
 
-            if "updated_embeddings" in result and result["updated_embeddings"] is not None:
-                chunk_embeddings = result["updated_embeddings"]
+            if getattr(result, "updated_embeddings", None) is not None:
+                chunk_embeddings = result.updated_embeddings
+            if getattr(result, "updated_chunks", None) is not None:
+                chunks = result.updated_chunks
 
-            last_sources = result["sources"]
+            last_sources = result.sources
 
             print("\n")
-            print_wrapped(result["answer"])
+            print_wrapped(result.answer)
 
             history.append({"role": "user", "content": user_input})
-            history.append({"role": "assistant", "content": result["answer"]})
+            history.append({"role": "assistant", "content": result.answer})
 
-            if result["is_web_research"]:
-                print(f"\n🌐 [Web Fallback Active | Verified by {result['provider']}]")
+            if result.is_web_research:
+                print(f"\n🌐 [Web Fallback Active | Verified by {result.provider}]")
             else:
-                print(f"\n⚡ [Vector Hit | Confidence: {result['max_score']:.1%}]")
+                print(f"\n⚡ [Vector Hit | Confidence: {result.max_score:.1%}]")
             print()
 
         except Exception as exc:

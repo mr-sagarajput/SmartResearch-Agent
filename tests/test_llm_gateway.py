@@ -7,14 +7,14 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core.llm_gateway import extract_content_safely
+from core.llm_gateway import extract_content_safely, get_gemini_client
 
 
 class TestLLMGatewayContentExtraction(unittest.TestCase):
@@ -105,6 +105,38 @@ class TestLLMGatewayContentExtraction(unittest.TestCase):
         mock_msg.content = "OpenAI response text"
         del mock_msg.reasoning  # simulate missing attribute
         self.assertEqual(extract_content_safely(mock_msg), "OpenAI response text")
+
+
+class TestGeminiClientInitialization(unittest.TestCase):
+    """Test suite for get_gemini_client."""
+
+    def test_get_gemini_client_missing_key(self):
+        """When GEMINI_API_KEY is missing or empty, client returns None."""
+        with patch("core.llm_gateway.GEMINI_API_KEY", ""):
+            client = get_gemini_client()
+            self.assertIsNone(client)
+
+    def test_get_gemini_client_with_key(self):
+        """When GEMINI_API_KEY is provided, initializes genai.Client with HttpOptions."""
+        with patch("core.llm_gateway.GEMINI_API_KEY", "test-mock-key"), \
+             patch("google.genai.Client") as mock_client_cls:
+            mock_instance = MagicMock()
+            mock_client_cls.return_value = mock_instance
+
+            client = get_gemini_client()
+            self.assertIsNotNone(client)
+            self.assertEqual(client, mock_instance)
+            mock_client_cls.assert_called_once()
+            _, kwargs = mock_client_cls.call_args
+            self.assertEqual(kwargs.get("api_key"), "test-mock-key")
+            self.assertIn("http_options", kwargs)
+
+    def test_get_gemini_client_handles_exception(self):
+        """When genai.Client raises an exception, return None without crashing."""
+        with patch("core.llm_gateway.GEMINI_API_KEY", "test-mock-key"), \
+             patch("google.genai.Client", side_effect=Exception("Initialization failure")):
+            client = get_gemini_client()
+            self.assertIsNone(client)
 
 
 if __name__ == "__main__":

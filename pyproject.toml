@@ -8,7 +8,7 @@ version = "0.2.0"
 description = "Autonomous Agentic RAG assistant combining vector memory with real-time web intelligence and academic research synthesis"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = "LicenseRef-Proprietary"
 authors = [
     { name = "SmartResearch Team" }
 ]

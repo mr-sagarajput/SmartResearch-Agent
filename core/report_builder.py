@@ -189,9 +189,12 @@ def generate_research_pdf_report(
     # Key Source Findings
     story.append(Paragraph(f"Detailed Source Findings ({len(sources_data)} Sources)", h2_style))
     for idx, src in enumerate(sources_data, 1):
-        clean_title = sanitize_text_for_pdf(src.get("title", f"Source {idx}"))
-        raw_url = src.get("url", "")
-        clean_notes = sanitize_text_for_pdf(src.get("notes", ""))
+        src_title = getattr(src, "title", None) or (src.get("title") if isinstance(src, dict) else f"Source {idx}")
+        raw_url = getattr(src, "url", None) or (src.get("url") if isinstance(src, dict) else "")
+        src_notes = getattr(src, "notes", None) or (src.get("notes") if isinstance(src, dict) else "")
+
+        clean_title = sanitize_text_for_pdf(src_title)
+        clean_notes = sanitize_text_for_pdf(src_notes)
 
         header_text = f"<b>{idx}. {clean_title}</b><br/><font color='#2563eb' size='8'>{raw_url}</font>"
         story.append(Paragraph(header_text, body_style))

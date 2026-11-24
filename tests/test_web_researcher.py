@@ -32,7 +32,7 @@ class TestWebResearcherConcurrency(unittest.TestCase):
         """Should return exactly 5 targeted pillar search queries."""
         queries = get_5_pillar_search_queries("Machine Learning")
         self.assertEqual(len(queries), 5)
-        self.assertTrue(all("pillar" in q and "query" in q for q in queries))
+        self.assertTrue(all(hasattr(q, "pillar") and hasattr(q, "query") and q.pillar and q.query for q in queries))
 
     def test_is_supported_article_url(self):
         """Should filter out YouTube links and direct PDF binaries."""
@@ -66,9 +66,9 @@ class TestWebResearcherConcurrency(unittest.TestCase):
         self.assertEqual(len(results), 5)
         # Verify canonical 1..5 ordering
         for idx, item in enumerate(results, start=1):
-            self.assertTrue(item["pillar"].startswith(f"{idx}."))
-            self.assertIn("notes", item)
-            self.assertIn("full_snippet", item)
+            self.assertTrue(item.pillar.startswith(f"{idx}."))
+            self.assertTrue(bool(item.notes))
+            self.assertTrue(bool(item.full_snippet))
 
     @patch("core.web_researcher.time.sleep", return_value=None)
     @patch("core.web_researcher.search_web")
@@ -91,7 +91,7 @@ class TestWebResearcherConcurrency(unittest.TestCase):
 
         # Pillar 2 failed gracefully, remaining 4 pillars succeeded
         self.assertEqual(len(results), 4)
-        pillars_collected = [r["pillar"] for r in results]
+        pillars_collected = [r.pillar for r in results]
         self.assertFalse(any("2. Core Sub-Fields" in p for p in pillars_collected))
         self.assertTrue(any("1. Introduction" in p for p in pillars_collected))
 
@@ -113,8 +113,8 @@ class TestWebResearcherConcurrency(unittest.TestCase):
         results = perform_live_research("Robotics", max_pages=2)
 
         self.assertEqual(len(results), 2)
-        self.assertEqual(results[0]["title"], "Result 1")
-        self.assertEqual(results[1]["title"], "Result 2")
+        self.assertEqual(results[0].title, "Result 1")
+        self.assertEqual(results[1].title, "Result 2")
 
 
 if __name__ == "__main__":

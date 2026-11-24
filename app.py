@@ -9,6 +9,7 @@ Dual-Tab Architecture with In-Line Chat:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from PIL import Image
 import streamlit as st
@@ -23,7 +24,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-from config import (
+from core.config import (
     GEMINI_API_KEY,
     OPENROUTER_API_KEY,
 )
@@ -236,22 +237,24 @@ with tab_chat:
 
                 status_placeholder.empty()
 
-                if "updated_embeddings" in result and result["updated_embeddings"] is not None:
-                    st.session_state.chunk_embeddings = result["updated_embeddings"]
+                if getattr(result, "updated_embeddings", None) is not None:
+                    st.session_state.chunk_embeddings = result.updated_embeddings
+                if getattr(result, "updated_chunks", None) is not None:
+                    st.session_state.chunks = result.updated_chunks
 
-                st.markdown(result["answer"])
+                st.markdown(result.answer)
 
                 badge_text = ""
-                if result["is_web_research"]:
-                    badge_text = f"🌐 Answered via Live Web Research · {result['provider']}"
+                if result.is_web_research:
+                    badge_text = f"🌐 Answered via Live Web Research · {result.provider}"
                     st.caption(badge_text)
                 else:
-                    badge_text = f"⚡ Answered from Vector Memory (Confidence: {result['max_score']:.1%}) · {result['provider']}"
+                    badge_text = f"⚡ Answered from Vector Memory (Confidence: {result.max_score:.1%}) · {result.provider}"
                     st.caption(badge_text)
 
-                if result["sources"]:
-                    with st.expander(f"📚 View Sources ({len(result['sources'])} references)"):
-                        for item, score in result["sources"]:
+                if result.sources:
+                    with st.expander(f"📚 View Sources ({len(result.sources)} references)"):
+                        for item, score in result.sources:
                             url_part = f" — [Link]({item.get('url')})" if item.get("url") else ""
                             st.markdown(f"**{item['source']}**{url_part}")
                             st.caption(item["text"][:250] + "...")
@@ -259,9 +262,9 @@ with tab_chat:
 
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": result["answer"],
+                    "content": result.answer,
                     "badge": badge_text,
-                    "sources": result["sources"],
+                    "sources": result.sources,
                 })
 
             except Exception as e:
@@ -304,21 +307,30 @@ with tab_research:
                 status_callback=lambda m: research_status.write(m),
             )
 
-            if res.get("success"):
-                if res.get("updated_embeddings") is not None:
-                    st.session_state.chunk_embeddings = res["updated_embeddings"]
+            if result_obj := (res if getattr(res, "success", False) else None):
+                if getattr(res, "updated_embeddings", None) is not None:
+                    st.session_state.chunk_embeddings = res.updated_embeddings
+                if getattr(res, "updated_chunks", None) is not None:
+                    st.session_state.chunks = res.updated_chunks
 
                 st.session_state.active_research_topic = research_input.strip()
-                st.session_state.active_research_pdf = res["pdf_path"]
-                st.session_state.active_research_summary = res["summary"]
+                st.session_state.active_research_pdf = res.pdf_path
+                st.session_state.active_research_summary = res.summary
+
+                formatted_sources = []
+                for s in res.sources:
+                    s_title = getattr(s, "title", None) or (s.get("title", "") if isinstance(s, dict) else "")
+                    s_notes = getattr(s, "notes", None) or (s.get("notes", "") if isinstance(s, dict) else "")
+                    s_url = getattr(s, "url", None) or (s.get("url", "") if isinstance(s, dict) else "")
+                    formatted_sources.append(({"source": s_title, "page": 0, "text": s_notes, "url": s_url}, 1.0))
 
                 # Reset previous research messages for the new topic
                 st.session_state.research_messages = [
                     {
                         "role": "assistant",
-                        "content": f"### 📋 Executive Research Summary: {research_input.strip()}\n\n{res['summary']}",
-                        "badge": f"📄 Saved directly to: `{res['pdf_path']}`",
-                        "sources": [({"source": s["title"], "page": 0, "text": s["notes"], "url": s["url"]}, 1.0) for s in res["sources"]],
+                        "content": f"### 📋 Executive Research Summary: {research_input.strip()}\n\n{res.summary}",
+                        "badge": f"📄 Saved directly to: `{res.pdf_path}`",
+                        "sources": formatted_sources,
                     }
                 ]
 
@@ -327,7 +339,7 @@ with tab_research:
 
             else:
                 research_status.update(label="❌ Research Failed", state="error", expanded=True)
-                st.error(f"Error: {res.get('error')}")
+                st.error(f"Error: {getattr(res, 'error', 'Unknown research error')}")
 
         except Exception as e:
             research_status.update(label="❌ Error during research", state="error", expanded=True)
@@ -340,8 +352,9 @@ with tab_research:
         # Clean Path Badge (No redundant bulky download button)
         col_badge, col_clear = st.columns([5, 1])
         with col_badge:
+            pdf_filename = Path(str(st.session_state.active_research_pdf)).name if st.session_state.active_research_pdf else "Report.pdf"
             st.success(
-                f"✅ **Report Saved:** `{st.session_state.active_research_pdf.name}` "
+                f"✅ **Report Saved:** `{pdf_filename}` "
                 f"*(Stored in `output/` folder)*",
                 icon="📄",
             )
@@ -391,17 +404,19 @@ with tab_research:
                     )
                     status_box_r.empty()
 
-                    if "updated_embeddings" in res_q and res_q["updated_embeddings"] is not None:
-                        st.session_state.chunk_embeddings = res_q["updated_embeddings"]
+                    if getattr(res_q, "updated_embeddings", None) is not None:
+                        st.session_state.chunk_embeddings = res_q.updated_embeddings
+                    if getattr(res_q, "updated_chunks", None) is not None:
+                        st.session_state.chunks = res_q.updated_chunks
 
-                    st.markdown(res_q["answer"])
+                    st.markdown(res_q.answer)
 
-                    badge_info = f"⚡ Grounded from Active Research Report (Confidence: {res_q['max_score']:.1%}) · {res_q['provider']}"
+                    badge_info = f"⚡ Grounded from Active Research Report (Confidence: {res_q.max_score:.1%}) · {res_q.provider}"
                     st.caption(badge_info)
 
-                    if res_q["sources"]:
-                        with st.expander(f"📚 View Citations ({len(res_q['sources'])} references)"):
-                            for item, score in res_q["sources"]:
+                    if res_q.sources:
+                        with st.expander(f"📚 View Citations ({len(res_q.sources)} references)"):
+                            for item, score in res_q.sources:
                                 url_part = f" — [Link]({item.get('url')})" if item.get("url") else ""
                                 st.markdown(f"**{item['source']}**{url_part}")
                                 st.caption(item["text"][:250] + "...")
@@ -409,9 +424,9 @@ with tab_research:
 
                     st.session_state.research_messages.append({
                         "role": "assistant",
-                        "content": res_q["answer"],
+                        "content": res_q.answer,
                         "badge": badge_info,
-                        "sources": res_q["sources"],
+                        "sources": res_q.sources,
                     })
 
                 except Exception as ex:

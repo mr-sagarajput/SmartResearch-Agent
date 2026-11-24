@@ -36,18 +36,6 @@ class ResearchPillar:
             full_snippet=str(data.get("full_snippet", "")),
         )
 
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
-
 
 @dataclass
 class SearchResult:
@@ -69,18 +57,6 @@ class SearchResult:
             notes=str(data.get("notes", "")),
             full_snippet=str(data.get("full_snippet", "")),
         )
-
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
 
 
 @dataclass
@@ -105,18 +81,6 @@ class DocumentChunk:
             text=str(data.get("text", "")),
             url=str(data.get("url", "")),
         )
-
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
 
 
 @dataclass
@@ -143,15 +107,6 @@ class VectorMatch:
             chunk = DocumentChunk(chunk_id=0, source="unknown", page=0, text=str(raw_chunk))
         return cls(chunk=chunk, score=float(data.get("score", 0.0)))
 
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
-
 
 @dataclass
 class RouterDecision:
@@ -164,9 +119,10 @@ class RouterDecision:
     is_web_research: bool = False
     provider: str = ""
     updated_embeddings: Optional[Any] = None
+    updated_chunks: Optional[List[Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "decision": self.decision,
             "answer": self.answer,
             "sources": self.sources,
@@ -175,9 +131,20 @@ class RouterDecision:
             "provider": self.provider,
             "updated_embeddings": self.updated_embeddings,
         }
+        if self.updated_chunks is not None:
+            d["updated_chunks"] = [
+                c.to_dict() if hasattr(c, "to_dict") else c for c in self.updated_chunks
+            ]
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> RouterDecision:
+        raw_chunks = data.get("updated_chunks")
+        updated_chunks = None
+        if raw_chunks is not None:
+            updated_chunks = [
+                DocumentChunk.from_dict(c) if isinstance(c, dict) else c for c in raw_chunks
+            ]
         return cls(
             decision=str(data.get("decision", "")),
             answer=str(data.get("answer", "")),
@@ -186,19 +153,8 @@ class RouterDecision:
             is_web_research=bool(data.get("is_web_research", False)),
             provider=str(data.get("provider", "")),
             updated_embeddings=data.get("updated_embeddings"),
+            updated_chunks=updated_chunks,
         )
-
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
 
 
 @dataclass
@@ -213,9 +169,10 @@ class DeepResearchResult:
     error: Optional[str] = None
     provider: str = ""
     updated_embeddings: Optional[Any] = None
+    updated_chunks: Optional[List[Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "success": self.success,
             "topic": self.topic,
             "summary": self.summary,
@@ -225,9 +182,20 @@ class DeepResearchResult:
             "provider": self.provider,
             "updated_embeddings": self.updated_embeddings,
         }
+        if self.updated_chunks is not None:
+            d["updated_chunks"] = [
+                c.to_dict() if hasattr(c, "to_dict") else c for c in self.updated_chunks
+            ]
+        return d
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> DeepResearchResult:
+        raw_chunks = data.get("updated_chunks")
+        updated_chunks = None
+        if raw_chunks is not None:
+            updated_chunks = [
+                DocumentChunk.from_dict(c) if isinstance(c, dict) else c for c in raw_chunks
+            ]
         return cls(
             success=bool(data.get("success", False)),
             topic=str(data.get("topic", "")),
@@ -237,19 +205,8 @@ class DeepResearchResult:
             error=data.get("error"),
             provider=str(data.get("provider", "")),
             updated_embeddings=data.get("updated_embeddings"),
+            updated_chunks=updated_chunks,
         )
-
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
 
 
 @dataclass
@@ -278,18 +235,6 @@ class ChatMessage:
             provider=data.get("provider"),
         )
 
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)
-
 
 @dataclass
 class ChatSessionState:
@@ -317,15 +262,3 @@ class ChatSessionState:
             active_topic=str(data.get("active_topic", "")),
             last_pdf_path=data.get("last_pdf_path"),
         )
-
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
-
-    def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
-
-    def __contains__(self, key: str) -> bool:
-        return hasattr(self, key)
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return getattr(self, key, default)

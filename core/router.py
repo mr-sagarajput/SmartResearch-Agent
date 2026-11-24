@@ -18,7 +18,7 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
-from core.config import MAX_RESEARCH_TOKENS, SIMILARITY_THRESHOLD
+from core.config import MAX_RESEARCH_TOKENS, SIMILARITY_THRESHOLD, logger
 from core.llm_gateway import execute_prompt, get_gemini_client
 from core.models import DeepResearchResult, DocumentChunk, RouterDecision
 from core.report_builder import generate_research_pdf_report
@@ -86,6 +86,7 @@ def process_query_with_router(
             max_score=max_score,
             sources=sources_data,
             is_web_research=False,
+            updated_chunks=chunks,
         )
 
     # Information missing -> Silent web fallback
@@ -106,6 +107,7 @@ def process_query_with_router(
             max_score=max_score,
             sources=[],
             is_web_research=True,
+            updated_chunks=chunks,
         )
 
     web_snippets = []
@@ -113,10 +115,10 @@ def process_query_with_router(
     chunk_start_id = len(chunks) + 1
 
     for idx, item in enumerate(web_results, 1):
-        title = item.get("title", "")
-        url = item.get("url", "")
-        notes = item.get("notes", "")
-        full_snippet = item.get("full_snippet", "")
+        title = item.title if hasattr(item, "title") else item.get("title", "")
+        url = item.url if hasattr(item, "url") else item.get("url", "")
+        notes = item.notes if hasattr(item, "notes") else item.get("notes", "")
+        full_snippet = item.full_snippet if hasattr(item, "full_snippet") else item.get("full_snippet", "")
         web_snippets.append(f"[Web Source {idx}: {title}] ({url})\n{notes}\n{full_snippet}")
         new_chunks.append(
             DocumentChunk(
@@ -152,15 +154,22 @@ def process_query_with_router(
                 updated_embeddings = np.vstack([chunk_embeddings, new_embeddings])
             else:
                 updated_embeddings = new_embeddings
-            chunks.extend(new_chunks)
+            updated_chunks = list(chunks) + new_chunks
         except Exception as e:
-            print(f"[Learning Notice]: {e}")
+            logger.warning(f"Vector Learning failed to append new chunks: {e}")
             updated_embeddings = chunk_embeddings
+            updated_chunks = list(chunks)
     else:
         updated_embeddings = chunk_embeddings
+        updated_chunks = list(chunks)
 
     sources_data = [
-        ({"source": item.get("title", ""), "page": 0, "text": item.get("notes", ""), "url": item.get("url", "")}, 1.0)
+        ({
+            "source": item.title if hasattr(item, "title") else item.get("title", ""),
+            "page": 0,
+            "text": item.notes if hasattr(item, "notes") else item.get("notes", ""),
+            "url": item.url if hasattr(item, "url") else item.get("url", ""),
+        }, 1.0)
         for item in web_results
     ]
 
@@ -171,6 +180,7 @@ def process_query_with_router(
         max_score=1.0,
         sources=sources_data,
         updated_embeddings=updated_embeddings,
+        updated_chunks=updated_chunks,
         is_web_research=True,
     )
 
@@ -202,11 +212,16 @@ def execute_deep_research(
 
     evidence_blocks = []
     for item in pillar_data:
+        pillar_name = item.pillar if hasattr(item, "pillar") else item.get("pillar", "")
+        title_str = item.title if hasattr(item, "title") else item.get("title", "")
+        url_str = item.url if hasattr(item, "url") else item.get("url", "")
+        notes_str = item.notes if hasattr(item, "notes") else item.get("notes", "")
+        snippet_str = item.full_snippet if hasattr(item, "full_snippet") else item.get("full_snippet", "")
         evidence_blocks.append(
-            f"### Pillar: {item.get('pillar', '')}\n"
-            f"Source: {item.get('title', '')} ({item.get('url', '')})\n"
-            f"Key Extracted Points:\n{item.get('notes', '')}\n"
-            f"Context Excerpt:\n{item.get('full_snippet', '')}\n"
+            f"### Pillar: {pillar_name}\n"
+            f"Source: {title_str} ({url_str})\n"
+            f"Key Extracted Points:\n{notes_str}\n"
+            f"Context Excerpt:\n{snippet_str}\n"
         )
     combined_evidence = "\n---\n".join(evidence_blocks)
 
@@ -264,7 +279,11 @@ Base all claims strictly on this verified evidence:
 
     report_full_text = f"Title: Comprehensive Research Report on {topic}\n\n{report_text}\n\n"
     for idx, s in enumerate(pillar_data, 1):
-        report_full_text += f"\nPillar Reference {idx}: {s.get('pillar', '')} - {s.get('title', '')} ({s.get('url', '')})\n{s.get('notes', '')}\n"
+        p_name = s.pillar if hasattr(s, "pillar") else s.get("pillar", "")
+        s_title = s.title if hasattr(s, "title") else s.get("title", "")
+        s_url = s.url if hasattr(s, "url") else s.get("url", "")
+        s_notes = s.notes if hasattr(s, "notes") else s.get("notes", "")
+        report_full_text += f"\nPillar Reference {idx}: {p_name} - {s_title} ({s_url})\n{s_notes}\n"
 
     report_chunks_text = [p.strip() for p in report_full_text.split("\n\n") if len(p.strip()) > 30]
 
@@ -287,9 +306,10 @@ Base all claims strictly on this verified evidence:
             updated_embeddings = np.vstack([chunk_embeddings, new_embeddings])
         else:
             updated_embeddings = new_embeddings
-        chunks.extend(new_chunks)
+        updated_chunks = list(chunks) + new_chunks
     else:
         updated_embeddings = chunk_embeddings
+        updated_chunks = list(chunks)
 
     return DeepResearchResult(
         success=True,
@@ -298,5 +318,6 @@ Base all claims strictly on this verified evidence:
         pdf_path=str(pdf_file_path),
         sources=pillar_data,
         updated_embeddings=updated_embeddings,
+        updated_chunks=updated_chunks,
         provider=provider,
     )
